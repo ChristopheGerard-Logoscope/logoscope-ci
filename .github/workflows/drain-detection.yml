@@ -7,13 +7,16 @@ name: drain-detection
 
 on:
   schedule:
+    # 2026-08-03 : boucle interne de 50 min > intervalle de creneau, plus un
+    # second cron decale. Un creneau saute ne cree plus de trou.
     - cron: "*/30 * * * *"
+    - cron: "5,35 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
-        description: "Duree max du drain en minutes (defaut 25)"
+        description: "Duree max du drain en minutes (defaut 50)"
         required: false
-        default: "25"
+        default: "50"
       route:
         description: "Longueur ciblee : long (> 1200 car., defaut) ou short"
         required: false
@@ -22,7 +25,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 60
     concurrency:
       group: drain-detection
       cancel-in-progress: false
@@ -64,7 +67,7 @@ jobs:
           # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
-          DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
+          DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '50' }}
           DRAIN_ROUTE: ${{ inputs.route || 'long' }}
         run: bun run scripts/detect-long-runner.ts
         working-directory: private-repo
