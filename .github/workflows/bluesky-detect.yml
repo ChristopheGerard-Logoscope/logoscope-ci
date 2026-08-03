@@ -26,11 +26,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Run Bluesky detection
         env:
           SOCIAL_PLATFORM: bluesky
@@ -41,3 +43,4 @@ jobs:
           BLUESKY_IDENTIFIER: ${{ secrets.BLUESKY_IDENTIFIER }}
           BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
         run: bun run scripts/social-discover-runner.ts
+        working-directory: private-repo
