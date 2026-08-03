@@ -37,11 +37,23 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
+      # Diagnostic (pilote) : confirme que le checkout a bien atterri dans
+      # `private-repo/` et que `package.json` s'y trouve. A retirer une fois
+      # un run vert observe.
+      - name: Debug - emplacement du package.json
+        working-directory: private-repo
+        run: |
+          echo "PWD: $(pwd)"
+          ls -la
+          find . -maxdepth 2 -name package.json || true
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install
+        working-directory: private-repo
       - run: bun run scripts/ingest-rss-runner.ts
+        working-directory: private-repo
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           # 2026-08-03 : la clé service role n'est plus copiée ici — le runner la
