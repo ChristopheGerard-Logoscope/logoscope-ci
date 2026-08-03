@@ -1,14 +1,27 @@
-name: Ingest RSS (Node runner)
+# ---------------------------------------------------------------------------
+# Logoscope CI (repo public d'orchestration) — ingestion RSS.
+#
+# Le code reste dans le repo privé : ce workflow le checkout en lecture
+# seule via PRIVATE_REPO_TOKEN (PAT fine-grained, Contents: Read-only).
+#
+# Variable de repo requise : PRIVATE_REPO = "<owner>/<repo-prive>"
+# Secrets requis : PRIVATE_REPO_TOKEN, SUPABASE_URL,
+#                  CRON_SECRET, YT_RUNNER_URL.
+#
+# 2026-08-03 : `schedule:` activé ici après retrait du schedule côté repo
+# privé (voir .github/workflows/ingest-rss.yml). Ce repo est la seule
+# source de cadence pour l'ingestion.
+# ---------------------------------------------------------------------------
+name: ingest-rss
 
 on:
-  # 2026-08-03 : cadence transférée au repo public `logoscope-ci`
-  # (ci-public/workflows/ingest-rss.yml). Ici, le repo privé n'a plus de
-  # minutes Actions : le `schedule:` ne se déclenchait plus, et le
-  # réactiver provoquerait une double ingestion. `workflow_dispatch`
-  # conservé pour les relances manuelles depuis ce repo.
-  # schedule:
-  #   - cron: '*/5 * * * *'
-  workflow_dispatch:
+  workflow_dispatch: {}
+  schedule:
+    # 2026-08-03 : GitHub ne déclenche qu'une fraction des schedules serrés
+    # (mesuré : 6 runs seulement sur une matinée en '*/5'). On planifie donc
+    # toutes les 30 min et c'est le runner qui tient la cadence interne de
+    # 5 min (INGEST_INTERVAL_MS) sur un budget de 25 min.
+    - cron: '*/30 * * * *'
 
 concurrency:
   group: ingest-rss-runner
@@ -19,19 +32,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      # Garde-fou (2026-08-03) : `actions/checkout` retombe silencieusement sur
+      # le repo courant si `repository:` est vide. On echoue avant, avec un
+      # message explicite.
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - name: Verify checkout contains package.json
+        run: |
+          echo "Contenu de private-repo :"
+          ls -la private-repo || true
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO pointe sur le mauvais depot, ou le PAT n'a pas Contents: Read sur le repo prive."
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install
+        working-directory: private-repo
       - run: bun run scripts/ingest-rss-runner.ts
+        working-directory: private-repo
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           # 2026-08-03 : la clé service role n'est plus copiée ici — le runner la
           # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
-          # Boucle interne (2026-08-03) : le runner tient lui-même la cadence
-          # de 5 min pendant 25 min, le scheduler GitHub étant trop irrégulier.
           INGEST_LOOP_MINUTES: '25'
           INGEST_INTERVAL_MS: '300000'
