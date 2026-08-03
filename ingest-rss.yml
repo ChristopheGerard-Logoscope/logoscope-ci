@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI (repo public d'orchestration) — ingestion RSS.
+#
+# Le code reste dans le repo privé : ce workflow le checkout en lecture
+# seule via PRIVATE_REPO_TOKEN (PAT fine-grained, Contents: Read-only).
+#
+# Variable de repo requise : PRIVATE_REPO = "<owner>/<repo-prive>"
+# Secrets requis : PRIVATE_REPO_TOKEN, SUPABASE_URL,
+#                  CRON_SECRET, YT_RUNNER_URL.
+#
+# 2026-08-03 : `schedule:` activé ici après retrait du schedule côté repo
+# privé (voir .github/workflows/ingest-rss.yml). Ce repo est la seule
+# source de cadence pour l'ingestion.
+# ---------------------------------------------------------------------------
+name: ingest-rss
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # GitHub Actions n'honore pas les cadences < 5 min et retarde souvent
+    # les schedules en heure de pointe : on écrit '*/5' explicitement.
+    - cron: '*/5 * * * *'
+
+concurrency:
+  group: ingest-rss-runner
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run scripts/ingest-rss-runner.ts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # 2026-08-03 : la clé service role n'est plus copiée ici — le runner la
+          # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
