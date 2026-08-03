@@ -1,33 +1,21 @@
 # ---------------------------------------------------------------------------
-# Drain du backlog de détection (2026-08-01, refondu le 2026-08-02).
-#
-# 2026-08-02 : le drain n'appelle plus le worker Cloudflare en HTTP (> 85 %
-# de 502 « Worker exceeded memory limit » sur la route `long`, quel que soit
-# le plafond de texte). Il exécute la détection EN NODE, en important
-# directement `runDetectionTick`. Pas de plafond mémoire, pas de timeout 25 s.
-#
-# Secrets requis : SUPABASE_URL, CRON_SECRET, YT_RUNNER_URL (la clé service
-# role est récupérée via le hook /api/public/hooks/service-key).
+# Logoscope CI — drain du backlog de détection (route « long », en Node).
+# Vague 1. Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN,
+# SUPABASE_URL, CRON_SECRET, YT_RUNNER_URL.
 # ---------------------------------------------------------------------------
 name: drain-detection
 
 on:
-  # Diagnostic 2026-08-01 : le worker ne réclame que les articles <= 1200 car.
-  # Les articles longs n'avaient donc plus aucun consommateur depuis le
-  # routage par longueur — d'où l'arrêt du canal `rss:mwe`.
-  # 2026-08-03 : cadence transférée au repo public `logoscope-ci`
-  # (ci-public/workflows/drain-detection.yml), où elle était déjà active en
-  # parallèle. Ne pas réactiver ici : deux drains concurrents.
-  # schedule:
-  #   - cron: "*/30 * * * *"
+  schedule:
+    - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
-        description: "Durée max du drain en minutes (défaut 45)"
+        description: "Duree max du drain en minutes (defaut 25)"
         required: false
-        default: "45"
+        default: "25"
       route:
-        description: "Longueur ciblée : long (> 1200 car., défaut) ou short"
+        description: "Longueur ciblee : long (> 1200 car., defaut) ou short"
         required: false
         default: "long"
 
@@ -39,12 +27,36 @@ jobs:
       group: drain-detection
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - name: Verify checkout contains package.json
+        run: |
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO ou PAT incorrect."
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Drain detection backlog
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -52,8 +64,7 @@ jobs:
           # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
-          # Cadence planifiée : 30 min. On borne à 25 min pour ne pas
-          # empiler deux drains concurrents.
           DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
           DRAIN_ROUTE: ${{ inputs.route || 'long' }}
         run: bun run scripts/detect-long-runner.ts
+        working-directory: private-repo
