@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------------------
 # Logoscope CI (repo public d'orchestration) — ingestion RSS.
-#
+# 
 # Le code reste dans le repo privé : ce workflow le checkout en lecture
 # seule via PRIVATE_REPO_TOKEN (PAT fine-grained, Contents: Read-only).
 #
