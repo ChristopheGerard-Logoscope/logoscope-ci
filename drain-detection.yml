@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — drain du backlog de détection (route « long », en Node).
+# Vague 1. Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN,
+# SUPABASE_URL, CRON_SECRET, YT_RUNNER_URL.
+# ---------------------------------------------------------------------------
+name: drain-detection
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: "Duree max du drain en minutes (defaut 25)"
+        required: false
+        default: "25"
+      route:
+        description: "Longueur ciblee : long (> 1200 car., defaut) ou short"
+        required: false
+        default: "long"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    concurrency:
+      group: drain-detection
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Drain detection backlog
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # 2026-08-03 : la clé service role n'est plus copiée ici — le runner la
+          # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
+          DRAIN_ROUTE: ${{ inputs.route || 'long' }}
+        run: bun run scripts/detect-long-runner.ts
