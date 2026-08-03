@@ -36,11 +36,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Classify RSS articles
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -51,3 +53,4 @@ jobs:
           CLASSIFY_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
           CLASSIFY_BATCH_SIZE: ${{ inputs.batch_size || '30' }}
         run: bun run scripts/classify-rss-articles.ts
+        working-directory: private-repo
