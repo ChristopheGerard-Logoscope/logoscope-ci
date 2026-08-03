@@ -30,6 +30,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Garde-fou (2026-08-03) : `actions/checkout` retombe silencieusement sur
+      # le repo courant si `repository:` est vide. On echoue avant, avec un
+      # message explicite.
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
       - name: Checkout code prive
         uses: actions/checkout@v4
         with:
@@ -38,15 +51,14 @@ jobs:
           ref: main
           persist-credentials: false
           path: private-repo
-      # Diagnostic (pilote) : confirme que le checkout a bien atterri dans
-      # `private-repo/` et que `package.json` s'y trouve. A retirer une fois
-      # un run vert observe.
-      - name: Debug - emplacement du package.json
-        working-directory: private-repo
+      - name: Verify checkout contains package.json
         run: |
-          echo "PWD: $(pwd)"
-          ls -la
-          find . -maxdepth 2 -name package.json || true
+          echo "Contenu de private-repo :"
+          ls -la private-repo || true
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO pointe sur le mauvais depot, ou le PAT n'a pas Contents: Read sur le repo prive."
+            exit 1
+          fi
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
