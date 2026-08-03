@@ -10,15 +10,17 @@ name: classify-rss-articles
 on:
   schedule:
     # 2026-08-03 : cadence tenue par le runner lui-meme (boucle interne de
-    # 25 min, attente CLASSIFY_IDLE_MS quand la file est vide). GitHub ne
-    # sert plus qu'a relancer le run toutes les 30 min.
+    # 50 min, attente CLASSIFY_IDLE_MS quand la file est vide). GitHub ne
+    # sert plus qu'a relancer le run : la boucle etant plus longue que
+    # l'intervalle de creneau, un creneau saute ne cree plus de trou.
     - cron: "*/30 * * * *"
+    - cron: "5,35 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
-        description: "Duree max du run en minutes (defaut 25)"
+        description: "Duree max du run en minutes (defaut 50)"
         required: false
-        default: "25"
+        default: "50"
       batch_size:
         description: "Articles a classer par lot (defaut 30)"
         required: false
@@ -27,7 +29,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     concurrency:
       group: classify-rss-articles
       cancel-in-progress: false
@@ -69,7 +71,7 @@ jobs:
           # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
-          CLASSIFY_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
+          CLASSIFY_MAX_MINUTES: ${{ inputs.max_minutes || '50' }}
           CLASSIFY_BATCH_SIZE: ${{ inputs.batch_size || '30' }}
         run: bun run scripts/classify-rss-articles.ts
         working-directory: private-repo
