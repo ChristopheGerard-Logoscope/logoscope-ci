@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — keepalive.
+#
+# GitHub desactive automatiquement les `schedule:` d'un repo public sans
+# activite depuis 60 jours. Pendant une absence prolongee, ce repo ne
+# recevra aucun commit : ce workflow pousse un commit vide chaque lundi
+# pour maintenir le repo « actif ».
+#
+# Aucun secret requis : utilise le GITHUB_TOKEN du repo public.
+# ---------------------------------------------------------------------------
+name: keepalive
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Empty keepalive commit
+        run: |
+          set -euo pipefail
+          git config user.name "logoscope-ci[bot]"
+          git config user.email "logoscope-ci@users.noreply.github.com"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git add .keepalive
+          git commit -m "chore: keepalive $(date -u +%Y-%m-%d)" || {
+            echo "rien a committer"; exit 0;
+          }
+          git push
