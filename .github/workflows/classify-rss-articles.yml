@@ -1,23 +1,30 @@
 # ---------------------------------------------------------------------------
-# Logoscope CI — classification de genre des articles RSS (Node).
-# Vague 1. Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN,
-# SUPABASE_URL, CRON_SECRET, YT_RUNNER_URL.
-# La clé Lovable AI n'est pas un secret GitHub : le runner la récupère via
-# le hook /api/public/hooks/ai-key, authentifié par CRON_SECRET.
+# Classification de genre des articles RSS en Node (2026-08-02).
+#
+# L'auto-classification a été retirée du worker d'ingestion Cloudflare pour
+# libérer du budget temps/mémoire. Ce workflow consomme la file d'articles
+# non classés en boucle, sans limite de wall-time worker.
+#
+# Secrets requis : SUPABASE_URL, CRON_SECRET,
+# YT_RUNNER_URL. La clé Lovable AI n'est plus un secret GitHub : le runner
+# la récupère via le hook /api/public/hooks/ai-key (auth CRON_SECRET).
 # ---------------------------------------------------------------------------
 name: classify-rss-articles
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
+  # 2026-08-03 : cadence transférée au repo public `logoscope-ci`
+  # (ci-public/workflows/classify-rss-articles.yml). Ne pas réactiver ici :
+  # double classification.
+  # schedule:
+  #   - cron: "*/15 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
-        description: "Duree max du run en minutes (defaut 25)"
+        description: "Durée max du run en minutes (défaut 25)"
         required: false
         default: "25"
       batch_size:
-        description: "Articles a classer par lot (defaut 30)"
+        description: "Articles à classer par lot (défaut 30)"
         required: false
         default: "30"
 
@@ -29,20 +36,12 @@ jobs:
       group: classify-rss-articles
       cancel-in-progress: false
     steps:
-      - name: Checkout code prive
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ vars.PRIVATE_REPO }}
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          ref: main
-          persist-credentials: false
-          path: private-repo
+      - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
-        working-directory: private-repo
       - name: Classify RSS articles
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -53,4 +52,3 @@ jobs:
           CLASSIFY_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
           CLASSIFY_BATCH_SIZE: ${{ inputs.batch_size || '30' }}
         run: bun run scripts/classify-rss-articles.ts
-        working-directory: private-repo
