@@ -34,11 +34,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Drain detection backlog
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -49,3 +51,4 @@ jobs:
           DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '25' }}
           DRAIN_ROUTE: ${{ inputs.route || 'long' }}
         run: bun run scripts/detect-long-runner.ts
+        working-directory: private-repo
