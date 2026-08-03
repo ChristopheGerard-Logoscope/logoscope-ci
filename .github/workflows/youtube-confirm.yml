@@ -26,11 +26,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Run YouTube confirm
         env:
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
@@ -39,3 +41,4 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: bun run scripts/yt-confirm-runner.ts
+        working-directory: private-repo
