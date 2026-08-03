@@ -26,11 +26,13 @@ jobs:
           token: ${{ secrets.PRIVATE_REPO_TOKEN }}
           ref: main
           persist-credentials: false
+          path: private-repo
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install --frozen-lockfile
+        working-directory: private-repo
       - name: Run Mastodon detection
         env:
           SOCIAL_PLATFORM: mastodon
@@ -39,6 +41,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: bun run scripts/social-discover-runner.ts
+        working-directory: private-repo
 
       - name: Maintain Mastodon source registry (weekly)
         if: ${{ success() }}
@@ -48,6 +51,7 @@ jobs:
           # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+        working-directory: private-repo
         run: |
           if [ "$(date -u +%u)" = "1" ] && [ "$(date -u +%H)" -lt 12 ]; then
             bun run scripts/maintain-mastodon-sources.ts
