@@ -1,0 +1,41 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — drainage de la file cooccurrence YouTube confirm.
+# Vague 2 (curl only : aucun checkout du repo prive n'est necessaire).
+# Secrets : YT_RUNNER_URL, CRON_SECRET.
+# ---------------------------------------------------------------------------
+name: drain-youtube-cooccur
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/15 * * * *"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: drain-youtube-cooccur
+      cancel-in-progress: false
+    steps:
+      - name: Trigger drain-youtube-cooccur hook
+        env:
+          HOOK_URL: ${{ secrets.YT_RUNNER_URL }}/api/public/hooks/drain-youtube-cooccur
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          resp_file="$(mktemp)"
+          http_code=$(curl -sS -o "$resp_file" -w "%{http_code}" -X POST "$HOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-cron-secret: $CRON_SECRET" \
+            --max-time 300 \
+            -d '{}')
+          echo "HTTP $http_code"
+          echo "--- response (first 4KB) ---"
+          tail -c 4096 "$resp_file" || true
+          echo
+          rm -f "$resp_file"
+          case "$http_code" in
+            2*) ;;
+            *) exit 22 ;;
+          esac
