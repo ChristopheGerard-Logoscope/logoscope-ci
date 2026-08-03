@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — detection Mastodon (runner Node) + passe hebdo du registre.
+# Vague 3. Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN,
+# YT_RUNNER_URL, YT_RUNNER_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY,
+# CRON_SECRET.
+# ---------------------------------------------------------------------------
+name: mastodon-detect
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "45 6,14 * * *"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: mastodon-detect
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run Mastodon detection
+        env:
+          SOCIAL_PLATFORM: mastodon
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          YT_RUNNER_SECRET: ${{ secrets.YT_RUNNER_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: bun run scripts/social-discover-runner.ts
+
+      - name: Maintain Mastodon source registry (weekly)
+        if: ${{ success() }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # 2026-08-03 : la clé service role n'est plus copiée ici — le runner la
+          # récupère via le hook /api/public/hooks/service-key (x-cron-secret).
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+        run: |
+          if [ "$(date -u +%u)" = "1" ] && [ "$(date -u +%H)" -lt 12 ]; then
+            bun run scripts/maintain-mastodon-sources.ts
+          else
+            echo "skip: passe hebdomadaire reservee au lundi matin (UTC)"
+          fi
