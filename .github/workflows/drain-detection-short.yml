@@ -3,6 +3,7 @@
 # execute EN NODE, hors Worker Cloudflare (2026-08-27).
 #
 # Jumeau de drain-detection.yml (voie longue), seule DRAIN_ROUTE change.
+# Re-push 2026-08-27 15:05 UTC : re-enregistrement du schedule (jamais declenche).
 # Motif : depuis le 24/08 le hook run-detection-fanout du Worker plante en OOM
 # (~19 reponses 502/h contre 3-5 succes), la file croit de ~48 articles/h.
 #
