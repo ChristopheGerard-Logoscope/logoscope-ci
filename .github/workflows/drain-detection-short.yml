@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — drain du chemin CHAUD (route « short », articles <= 1200 car.),
+# execute EN NODE, hors Worker Cloudflare (2026-08-27).
+#
+# Jumeau de drain-detection.yml (voie longue), seule DRAIN_ROUTE change.
+# Motif : depuis le 24/08 le hook run-detection-fanout du Worker plante en OOM
+# (~19 reponses 502/h contre 3-5 succes), la file croit de ~48 articles/h.
+#
+# Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN, SUPABASE_URL,
+# CRON_SECRET, YT_RUNNER_URL. Aucun secret supplementaire : la cle service role
+# est recuperee a l'execution via /api/public/hooks/service-key (x-cron-secret).
+# ---------------------------------------------------------------------------
+name: drain-detection-short
+
+on:
+  schedule:
+    # Boucle interne de 50 min > intervalle de creneau, plus un second cron
+    # decale : un creneau saute ne cree pas de trou.
+    - cron: "*/30 * * * *"
+    - cron: "5,35 * * * *"
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: "Duree max du drain en minutes (defaut 50)"
+        required: false
+        default: "50"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      # Groupe distinct de la voie longue : les deux drains tournent en parallele.
+      group: drain-detection-short
+      cancel-in-progress: false
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - name: Verify checkout contains package.json
+        run: |
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO ou PAT incorrect."
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: private-repo
+      - name: Drain detection backlog (route short)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          DRAIN_MAX_MINUTES: ${{ inputs.max_minutes || '50' }}
+          DRAIN_ROUTE: short
+        run: bun run scripts/detect-long-runner.ts
+        working-directory: private-repo
