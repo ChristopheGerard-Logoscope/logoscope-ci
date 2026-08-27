@@ -14,7 +14,7 @@ on:
     # sert plus qu'a relancer le run : la boucle etant plus longue que
     # l'intervalle de creneau, un creneau saute ne cree plus de trou.
     - cron: "*/30 * * * *"
-    - cron: "5,35 * * * *"
+    - cron: "11,41 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
