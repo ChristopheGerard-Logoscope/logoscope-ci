@@ -10,7 +10,7 @@ on:
     # 2026-08-03 : boucle interne de 50 min > intervalle de creneau, plus un
     # second cron decale. Un creneau saute ne cree plus de trou.
     - cron: "*/30 * * * *"
-    - cron: "5,35 * * * *"
+    - cron: "23,53 * * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
