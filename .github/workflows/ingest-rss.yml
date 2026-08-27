@@ -26,7 +26,7 @@ on:
     # file par `concurrency`), donc un créneau sauté ne crée plus de trou.
     # Second cron décalé : deux chances de déclenchement par demi-heure.
     - cron: '*/30 * * * *'
-    - cron: '5,35 * * * *'
+    - cron: '17,47 * * * *'
 
 concurrency:
   group: ingest-rss-runner
