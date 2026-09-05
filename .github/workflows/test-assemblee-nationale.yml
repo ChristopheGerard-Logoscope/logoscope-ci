@@ -1,0 +1,26 @@
+name: Test — dump Assemblée nationale (Débats)
+
+on:
+  workflow_dispatch:
+    inputs:
+      legislature:
+        description: "Numéro de législature (ex. 17)"
+        required: false
+        default: "17"
+      keyword:
+        description: "Mot-clé à rechercher en test d'attestation"
+        required: false
+        default: "congé climatique"
+
+jobs:
+  test-dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Rendre le script exécutable
+        run: chmod +x scripts/test-assemblee-debats-dump.sh
+
+      - name: Lancer le test
+        run: ./scripts/test-assemblee-debats-dump.sh "${{ github.event.inputs.legislature }}" "${{ github.event.inputs.keyword }}"
