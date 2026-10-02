@@ -1,0 +1,46 @@
+# Garde « quasi-forme connue » (coquilles) — voie B.
+# Marquage réversible des unigrammes presse hapax à une édition d'une forme connue.
+# Aucune suppression, aucun effet sur les candidats publiés.
+# Planifié : applique le marquage. Manuel : dry-run par défaut.
+name: coquille-sweep
+
+on:
+  schedule:
+    - cron: '47 4 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Fenêtre en jours"
+        required: false
+        default: "3"
+      apply:
+        description: "1 = applique le marquage, sinon dry-run"
+        required: false
+        default: "0"
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: coquille-sweep
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ChristopheGerard-Logoscope/logoscope
+          ref: main
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Balayage coquilles voie B
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          COQUILLE_DAYS: ${{ inputs.days || '3' }}
+          COQUILLE_APPLY: ${{ github.event_name == 'schedule' && '1' || inputs.apply || '0' }}
+        run: bun run scripts/sweep-coquilles-voie-b.ts
