@@ -1,0 +1,69 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — mise en veille automatique des candidats bruites (2026-10).
+#
+# Quatre categories reversibles : collocation francaise banale, prefixe
+# scalaire (ultra-/quasi-/semi-/mi-) + radical attesté, contexte entierement
+# non francais, sigle passe en bas de casse.
+#
+# Le balayage repasse chaque jour sur toute la file 'pending'/'llm_pending' :
+# il couvre donc aussi les candidats admis depuis le run precedent.
+#
+# HOLD_APPLY=0 par defaut => dry-run. Mettre la variable de repo a "1" pour
+# la bascule reelle.
+# ---------------------------------------------------------------------------
+name: hold-noise-candidates
+
+on:
+  schedule:
+    - cron: "40 3 * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "1 = bascule reelle, 0 = dry-run"
+        required: false
+        default: "0"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: hold-noise-candidates
+      cancel-in-progress: false
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+        working-directory: private-repo
+      - name: Balayage mise en veille
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+        run: |
+          if [ "${{ inputs.apply || vars.HOLD_APPLY || '0' }}" = "1" ]; then
+            bun run scripts/hold-noise-candidates.ts --apply
+          else
+            bun run scripts/hold-noise-candidates.ts
+          fi
+        working-directory: private-repo
