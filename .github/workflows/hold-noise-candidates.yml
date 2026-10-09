@@ -60,6 +60,8 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          # Plafond par passage (variable de dépôt) ; vide => défaut 300 du script.
+          HOLD_MAX_PER_RUN: ${{ vars.HOLD_MAX_PER_RUN || '' }}
         run: |
           if [ "${{ inputs.apply || vars.HOLD_APPLY || '0' }}" = "1" ]; then
             bun run scripts/hold-noise-candidates.ts --apply
