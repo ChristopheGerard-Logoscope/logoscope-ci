@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — sonde Lemmy - Jel'ai-lu (runner Bun).
+# Planifié le 1er et le 16 de chaque mois à 04:40 UTC (~tous les 15 jours),
+# lancement manuel toujours possible. Variable : PRIVATE_REPO. Secrets :
+# PRIVATE_REPO_TOKEN, YT_RUNNER_URL, YT_RUNNER_SECRET, SUPABASE_ANON_KEY.
+# ---------------------------------------------------------------------------
+name: lemmy-detect
+
+on:
+  schedule:
+    - cron: "40 4 1,16 * *"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    concurrency:
+      group: lemmy-detect
+      cancel-in-progress: false
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - name: Verify checkout contains package.json
+        run: |
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO ou PAT incorrect."
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+        working-directory: private-repo
+      - name: Run Lemmy attestation probe
+        env:
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          YT_RUNNER_SECRET: ${{ secrets.YT_RUNNER_SECRET }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: bun run scripts/lemmy-attest-runner.ts
+        working-directory: private-repo
