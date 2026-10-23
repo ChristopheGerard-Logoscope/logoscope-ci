@@ -3,7 +3,6 @@
 # execute EN NODE, hors Worker Cloudflare (2026-08-27).
 #
 # Jumeau de drain-detection.yml (voie longue), seule DRAIN_ROUTE change.
-# Re-push 2026-08-27 15:05 UTC : re-enregistrement du schedule (jamais declenche).
 # Motif : depuis le 24/08 le hook run-detection-fanout du Worker plante en OOM
 # (~19 reponses 502/h contre 3-5 succes), la file croit de ~48 articles/h.
 #
@@ -17,7 +16,8 @@ on:
   schedule:
     # Boucle interne de 50 min > intervalle de creneau, plus un second cron
     # decale : un creneau saute ne cree pas de trou.
-    - cron: "*/30 * * * *"
+    # Décalé de :00/:30 (2026-10-23) pour ne pas démarrer en même temps que la route long.
+    - cron: "15,45 * * * *"
     - cron: "8,38 * * * *"
   workflow_dispatch:
     inputs:
@@ -59,6 +59,19 @@ jobs:
             echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO ou PAT incorrect."
             exit 1
           fi
+      # Garde POS « fragment verbal » (volet a) : spaCy est requis pour le
+      # balayage de fin de run. Si l'installation echoue, le balayage est
+      # inerte et le run continue normalement.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+        continue-on-error: true
+      - name: Install spaCy + fr_core_news_sm
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "spacy>=3.7,<4"
+          python -m spacy download fr_core_news_sm
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -67,6 +80,7 @@ jobs:
         working-directory: private-repo
       - name: Drain detection backlog (route short)
         env:
+          VERB_FRAGMENT_APPLY: ${{ vars.VERB_FRAGMENT_APPLY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
