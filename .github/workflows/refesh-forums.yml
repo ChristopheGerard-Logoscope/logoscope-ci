@@ -1,0 +1,57 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — sonde forums planifiée (Firecrawl).
+# Lundi à vendredi à 03:20 UTC, UNE seule vague de 8 mots (week-end laissé
+# au passage manuel d'Hypothèses). Le hook ne sonde rien tant que le réglage
+# `forum_cron_enabled` n'est pas à true (« automatique désactivé », run vert).
+# Échec visible seulement si 0 mot sondé alors qu'il en reste, sans raison
+# d'arrêt connue (plafond, réserve, interrupteur = run vert).
+# Secrets : YT_RUNNER_URL, CRON_SECRET (curl seul, aucun checkout).
+# Le workflow manuel du dépôt privé reste sans planification.
+# ---------------------------------------------------------------------------
+name: refresh-forums
+
+on:
+  schedule:
+    - cron: "20 3 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: refresh-forums
+      cancel-in-progress: false
+    steps:
+      - name: Wave
+        env:
+          HOOK_URL: ${{ secrets.YT_RUNNER_URL }}/api/public/hooks/refresh-forums
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o out.json -w "%{http_code}" -X POST "$HOOK_URL" \
+            -H "Content-Type: application/json" -H "x-cron-secret: $CRON_SECRET" \
+            --max-time 900 -d '{"scheduled":true}')
+          echo "HTTP $code"; head -c 4096 out.json; echo
+          case "$code" in 2*) ;; *) echo "::error::HTTP $code"; exit 22 ;; esac
+          {
+            echo "## refresh-forums (planifié)"
+            jq -r '"Interrupteur automatique (forum_cron_enabled) : \(if .cronEnabled then "activé" else "désactivé" end)"' out.json
+            echo
+            if jq -e '.simulation == true' out.json >/dev/null; then
+              echo "Simulation (forum_runner_enabled ≠ true), mots prévus :"
+              jq -r '.wouldProbe[]? | "- \(.lemma)"' out.json
+            fi
+            if jq -e '.probes' out.json >/dev/null 2>&1; then
+              echo "| Mot | Origine | Résultat | Attestations | Crédits |"
+              echo "|---|---|---|---|---|"
+              jq -r '.probes[] | "| \(.lemma) | \(.pool) | \(.result) | \(.hits) | \(.credits) |"' out.json
+              echo
+              jq -r '"Mots sondés : \(.probed) · crédits : \(.creditsSpent) · reste à sonder : \(.remainingDue) · délais : Dico \(.reprobeDays) j / hapax \(.hapaxReprobeDays) j"' out.json
+            fi
+            jq -r 'if .stopLabel then "Arrêt normal : \(.stopLabel)" else empty end' out.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          if jq -e '.ok == false' out.json >/dev/null; then
+            echo "::error::$(jq -r '.error // "échec"' out.json) — 0 mot sondé alors qu'il en reste $(jq -r '.due // "?"' out.json)"
+            exit 1
+          fi
