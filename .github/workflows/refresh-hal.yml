@@ -1,0 +1,51 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — sonde HAL planifiée (API publique, 0 crédit Firecrawl).
+# Chaque lundi à 04:10 UTC. Source HAL écrite en dur, aucune entrée : ce
+# workflow ne peut jamais lancer Hypothèses (le hook refuse aussi tout run
+# planifié non HAL). Re-sonde des mots après 90 jours (`hal_reprobe_days`).
+# Rien n'est sondé tant que `hal_cron_enabled` n'est pas à true
+# (« automatique désactivé », run vert).
+# Secrets : YT_RUNNER_URL, CRON_SECRET (curl seul, aucun checkout).
+# ---------------------------------------------------------------------------
+name: refresh-hal
+
+on:
+  schedule:
+    - cron: "10 4 * * 1"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: refresh-hal
+      cancel-in-progress: false
+    steps:
+      - name: Probe HAL
+        env:
+          HOOK_URL: ${{ secrets.YT_RUNNER_URL }}/api/public/hooks/refresh-scholarly
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o out.json -w "%{http_code}" -X POST "$HOOK_URL" \
+            -H "Content-Type: application/json" -H "x-cron-secret: $CRON_SECRET" \
+            --max-time 900 -d '{"source":"hal","max":100,"scheduled":true}')
+          echo "HTTP $code"; head -c 4096 out.json; echo
+          case "$code" in 2*) ;; *) echo "::error::HTTP $code"; exit 22 ;; esac
+          {
+            echo "## refresh-hal (planifié)"
+            jq -r '"Interrupteur automatique (hal_cron_enabled) : \(if .cronEnabled then "activé" else "désactivé" end)"' out.json
+            echo
+            jq -r '"Mots sondés : \(.probed // 0) · attestations enregistrées : \(.inserted // 0) · crédits Firecrawl : \(.credits // 0) · reste à sonder : \(.remainingDue // 0)"' out.json
+            jq -r 'if .stopLabel then "Arrêt normal : \(.stopLabel)" else empty end' out.json
+            if jq -e '.results' out.json >/dev/null 2>&1; then
+              echo
+              echo "| Mot | Résultat | Attestations |"
+              echo "|---|---|---|"
+              jq -r '.results[] | "| \(.lemma) | \(.result)\(if .error then " (\(.error))" else "" end) | \(.attestations) |"' out.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if jq -e '.ok == false' out.json >/dev/null; then
+            echo "::error::$(jq -r '.error // "échec"' out.json) (writeErrors=$(jq -r '.writeErrors // 0' out.json))"
+            exit 1
+          fi
