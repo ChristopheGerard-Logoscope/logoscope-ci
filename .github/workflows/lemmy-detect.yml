@@ -8,7 +8,7 @@ name: lemmy-detect
 
 on:
   schedule:
-    - cron: "40 4 1,16 * *"
+    - cron: "40 4 * * 1"
   workflow_dispatch: {}
 
 jobs:
