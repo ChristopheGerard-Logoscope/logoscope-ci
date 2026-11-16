@@ -1,7 +1,16 @@
 # ---------------------------------------------------------------------------
-# Logoscope CI — detection YouTube (runner Node).
-# Vague 3. Variable requise : PRIVATE_REPO. Secrets : PRIVATE_REPO_TOKEN,
-# YT_RUNNER_URL, YT_RUNNER_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY.
+# B1.b (2026-07-26) — Runner GH Actions pour la détection YouTube.
+#
+# Phase 2 (2026-07-26 pm) : cron activé après validation du premier tick
+# manuel (54/54 succès, 0 erreur, processed_at cohérent). Intervalle 10 min
+# — un run prend ~4-5 min pour 20-54 commentaires, marge suffisante pour
+# éviter tout chevauchement (concurrency group `yt-detect` reste en filet).
+# Ne pas resserrer sous 10 min sans revalider (cf. .lovable/plan.md).
+#
+# Le repo étant public, tous les paramètres sensibles passent par des
+# secrets GH (YT_RUNNER_SECRET, SUPABASE_URL, SUPABASE_ANON_KEY,
+# YT_RUNNER_URL). Le SUPABASE_ANON_KEY est publiable mais on garde le
+# canal secret pour rester homogène.
 # ---------------------------------------------------------------------------
 name: yt-detect
 
@@ -9,15 +18,17 @@ on:
   workflow_dispatch:
     inputs:
       batch_size:
-        description: "Commentaires par claim (defaut 20)"
+        description: "Commentaires par claim (défaut 20)"
         required: false
         default: "20"
       max_batches:
-        description: "Nombre max de claims dans un run (defaut 10)"
+        description: "Nombre max de claims dans un run (défaut 10)"
         required: false
         default: "10"
-  schedule:
-    - cron: "*/10 * * * *"
+  # 2026-08-03 : cadence transférée au repo public `logoscope-ci`
+  # (ci-public/workflows/yt-detect.yml). Ne pas réactiver ici : double run.
+  # schedule:
+  #   - cron: "*/10 * * * *"
 
 jobs:
   run:
@@ -27,22 +38,28 @@ jobs:
       group: yt-detect
       cancel-in-progress: false
     steps:
-      - name: Checkout code prive
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      # Garde POS « fragment verbal » (volet a) : spaCy est requis pour le
+      # balayage de fin de run. Si l'installation échoue, le balayage est
+      # inerte et le run continue normalement.
+      - uses: actions/setup-python@v5
         with:
-          repository: ${{ vars.PRIVATE_REPO }}
-          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
-          ref: main
-          persist-credentials: false
-          path: private-repo
+          python-version: "3.11"
+        continue-on-error: true
+      - name: Install spaCy + fr_core_news_sm
+        continue-on-error: true
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "spacy>=3.7,<4"
+          python -m spacy download fr_core_news_sm
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - name: Install dependencies
         run: bun install
-        working-directory: private-repo
       - name: Run YouTube detection
         env:
+          VERB_FRAGMENT_APPLY: ${{ vars.VERB_FRAGMENT_APPLY }}
           YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
           YT_RUNNER_SECRET: ${{ secrets.YT_RUNNER_SECRET }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -50,4 +67,3 @@ jobs:
           YT_BATCH_SIZE: ${{ inputs.batch_size || '20' }}
           YT_MAX_BATCHES: ${{ inputs.max_batches || '10' }}
         run: bun run scripts/yt-detect-runner.ts
-        working-directory: private-repo
