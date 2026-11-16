@@ -1,57 +1,60 @@
 # ---------------------------------------------------------------------------
-# Logoscope CI — sonde forums planifiée (Firecrawl).
-# Lundi à vendredi à 03:20 UTC, UNE seule vague de 8 mots (week-end laissé
-# au passage manuel d'Hypothèses). Le hook ne sonde rien tant que le réglage
-# `forum_cron_enabled` n'est pas à true (« automatique désactivé », run vert).
-# Échec visible seulement si 0 mot sondé alors qu'il en reste, sans raison
-# d'arrêt connue (plafond, réserve, interrupteur = run vert).
-# Secrets : YT_RUNNER_URL, CRON_SECRET (curl seul, aucun checkout).
-# Le workflow manuel du dépôt privé reste sans planification.
+# Lanceur de la collecte forum (remplace la tâche pg_cron refresh-forums-weekly,
+# qui reste inactive). Plusieurs vagues de 8 sondes, au moins 8 s entre deux
+# vagues. Tant que le réglage `forum_runner_enabled` n'est pas à true, le hook
+# répond en simulation (aucun crédit Firecrawl consommé).
+# Déclenchement manuel uniquement.
 # ---------------------------------------------------------------------------
 name: refresh-forums
 
 on:
-  schedule:
-    - cron: "20 3 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      waves:
+        description: "Nombre de vagues de 8 sondes"
+        required: false
+        default: "1"
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     concurrency:
       group: refresh-forums
       cancel-in-progress: false
     steps:
-      - name: Wave
+      - name: Waves
         env:
           HOOK_URL: ${{ secrets.YT_RUNNER_URL }}/api/public/hooks/refresh-forums
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          WAVES: ${{ github.event.inputs.waves }}
         run: |
           set -euo pipefail
-          code=$(curl -sS -o out.json -w "%{http_code}" -X POST "$HOOK_URL" \
-            -H "Content-Type: application/json" -H "x-cron-secret: $CRON_SECRET" \
-            --max-time 900 -d '{"scheduled":true}')
-          echo "HTTP $code"; head -c 4096 out.json; echo
-          case "$code" in 2*) ;; *) echo "::error::HTTP $code"; exit 22 ;; esac
-          {
-            echo "## refresh-forums (planifié)"
-            jq -r '"Interrupteur automatique (forum_cron_enabled) : \(if .cronEnabled then "activé" else "désactivé" end)"' out.json
-            echo
-            if jq -e '.simulation == true' out.json >/dev/null; then
-              echo "Simulation (forum_runner_enabled ≠ true), mots prévus :"
-              jq -r '.wouldProbe[]? | "- \(.lemma)"' out.json
+          n="${WAVES:-1}"
+          for i in $(seq 1 "$n"); do
+            echo "=== Vague $i/$n ==="
+            resp="$(mktemp)"
+            code=$(curl -sS -o "$resp" -w "%{http_code}" -X POST "$HOOK_URL" \
+              -H "Content-Type: application/json" \
+              -H "x-cron-secret: $CRON_SECRET" \
+              --max-time 900 -d '{"manual":true}')
+            echo "HTTP $code"; head -c 4096 "$resp"; echo
+            if command -v jq >/dev/null && jq -e '.probes' "$resp" >/dev/null 2>&1; then
+              {
+                echo "### Vague $i/$n"
+                echo ""
+                echo "| Mot | Origine | Résultat | Attestations | Crédits |"
+                echo "|---|---|---|---|---|"
+                jq -r '.probes[] | "| \(.lemma) | \(.pool) | \(.result) | \(.hits) | \(.credits) |"' "$resp"
+                echo ""
+                jq -r '"Crédits : \(.creditsSpent) · reste à sonder : \(.remainingDue) · arrêt : \(.stoppedByBudget // "aucun")"' "$resp"
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
-            if jq -e '.probes' out.json >/dev/null 2>&1; then
-              echo "| Mot | Origine | Résultat | Attestations | Crédits |"
-              echo "|---|---|---|---|---|"
-              jq -r '.probes[] | "| \(.lemma) | \(.pool) | \(.result) | \(.hits) | \(.credits) |"' out.json
-              echo
-              jq -r '"Mots sondés : \(.probed) · crédits : \(.creditsSpent) · reste à sonder : \(.remainingDue) · délais : Dico \(.reprobeDays) j / hapax \(.hapaxReprobeDays) j"' out.json
-            fi
-            jq -r 'if .stopLabel then "Arrêt normal : \(.stopLabel)" else empty end' out.json
-          } >> "$GITHUB_STEP_SUMMARY"
-          if jq -e '.ok == false' out.json >/dev/null; then
-            echo "::error::$(jq -r '.error // "échec"' out.json) — 0 mot sondé alors qu'il en reste $(jq -r '.due // "?"' out.json)"
-            exit 1
-          fi
+            case "$code" in 2*) ;; *) exit 22 ;; esac
+            if grep -q '"simulation":true' "$resp"; then echo "Simulation : arrêt après une vague."; break; fi
+            if grep -q '"stoppedByBudget":"' "$resp"; then echo "Arrêt budget/réserve."; break; fi
+            if grep -q '"probed":0' "$resp"; then echo "Plus rien à sonder."; break; fi
+            rm -f "$resp"
+            if [ "$i" -lt "$n" ]; then sleep 10; fi
+          done
+          exit 0
