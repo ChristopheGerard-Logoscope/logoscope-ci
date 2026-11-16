@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# Logoscope CI — re-sonde forums (runner Bun, un mot par appel au hook).
+# Lundi à vendredi 03:20 UTC + manuel. Variable : PRIVATE_REPO. Secrets :
+# PRIVATE_REPO_TOKEN, YT_RUNNER_URL, CRON_SECRET.
+# ---------------------------------------------------------------------------
+name: refresh-forums
+
+on:
+  schedule:
+    - cron: "20 3 * * 1-5"
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: refresh-forums
+      cancel-in-progress: false
+    steps:
+      - name: Validate inputs
+        run: |
+          if [ -z "${{ vars.PRIVATE_REPO }}" ]; then
+            echo "ERROR: PRIVATE_REPO n'est pas defini (Settings > Secrets and variables > Actions > Variables)."
+            exit 1
+          fi
+          if [ -z "${{ secrets.PRIVATE_REPO_TOKEN }}" ]; then
+            echo "ERROR: le secret PRIVATE_REPO_TOKEN n'est pas defini."
+            exit 1
+          fi
+      - name: Checkout code prive
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - name: Verify checkout contains package.json
+        run: |
+          if [ ! -f private-repo/package.json ]; then
+            echo "ERROR: private-repo/package.json introuvable — PRIVATE_REPO ou PAT incorrect."
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        run: bun install
+        working-directory: private-repo
+      - name: Run forum re-probe
+        env:
+          YT_RUNNER_URL: ${{ secrets.YT_RUNNER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: bun run scripts/forum-runner.ts
+        working-directory: private-repo
