@@ -13,16 +13,16 @@ on:
         required: false
         default: "20"
       max_batches:
-        description: "Nombre max de claims dans un run (defaut 10)"
+        description: "Nombre max de claims dans un run (defaut 15)"
         required: false
-        default: "10"
+        default: "15"
   schedule:
-    - cron: "7 7,19 * * *"
+    - cron: "7 */2 * * *"
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     concurrency:
       group: yt-detect
       cancel-in-progress: false
@@ -75,6 +75,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           YT_BATCH_SIZE: ${{ inputs.batch_size || '20' }}
-          YT_MAX_BATCHES: ${{ inputs.max_batches || '10' }}
+          YT_MAX_BATCHES: ${{ inputs.max_batches || '15' }}
+          YT_TIME_BUDGET_MS: "480000"
         run: bun run scripts/yt-detect-runner.ts
         working-directory: private-repo
