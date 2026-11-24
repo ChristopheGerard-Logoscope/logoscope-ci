@@ -1,0 +1,65 @@
+name: domain-shadow
+on:
+  schedule:
+    - cron: '10 7 * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: 'Recalcul complet du mode ombre'
+        default: 'false'
+      redraw:
+        description: 'Nouveau tirage des témoins'
+        default: 'false'
+concurrency:
+  group: domain-shadow
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.PRIVATE_REPO }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          ref: main
+          persist-credentials: false
+          path: private-repo
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+        working-directory: private-repo
+      - name: Vérifier que le traitement isolé est publié
+        id: availability
+        env:
+          DOMAIN_SHADOW_URL: ${{ secrets.YT_RUNNER_URL }}
+        run: |
+          origin="$(python3 -c 'import os,urllib.parse; u=urllib.parse.urlsplit(os.environ["DOMAIN_SHADOW_URL"]); print(u.scheme+"://"+u.netloc)')"
+          status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$origin/api/public/hooks/domain-shadow")"
+          if [ "$status" = "401" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          elif [ "$status" = "404" ]; then
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Mode ombre configuré, en attente de publication du traitement isolé.'
+          else
+            echo "::error::Traitement isolé indisponible : HTTP $status"
+            exit 1
+          fi
+      - name: Calcul isolé (nouvelles occurrences), témoins renouvelés chaque mois
+        if: steps.availability.outputs.ready == 'true'
+        working-directory: private-repo
+        env:
+          DOMAIN_SHADOW_URL: ${{ secrets.YT_RUNNER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          FULL: ${{ inputs.full || 'false' }}
+          REDRAW: ${{ inputs.redraw || 'false' }}
+        run: |
+          args="--apply --out=/tmp/domain-shadow"
+          if [ "$FULL" = "true" ]; then args="$args --full"; fi
+          if [ "$REDRAW" = "true" ]; then args="$args --redraw"; fi
+          bun run scripts/domain-shadow-run.ts $args
+      - uses: actions/upload-artifact@v4
+        if: steps.availability.outputs.ready == 'true'
+        with:
+          name: domain-shadow-${{ github.run_id }}
+          path: /tmp/domain-shadow
+          retention-days: 90
