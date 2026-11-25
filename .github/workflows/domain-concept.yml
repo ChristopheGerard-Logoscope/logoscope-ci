@@ -1,0 +1,25 @@
+name: domain-concept
+on:
+  schedule:
+    - cron: '10 7 * * *'
+  workflow_dispatch:
+concurrency:
+  group: domain-concept
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Domaines en mode ombre (≤ 10 × 10 mots)
+        env:
+          URL: ${{ secrets.YT_RUNNER_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          origin="$(python3 -c 'import os,urllib.parse; u=urllib.parse.urlsplit(os.environ["URL"]); print(u.scheme+"://"+u.netloc)')"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            body="$(curl -sf -X POST -H "x-cron-secret: $CRON_SECRET" "$origin/api/public/hooks/domain-concept")" || { echo "::warning::appel $i échoué"; exit 1; }
+            echo "$body"
+            echo "$body" | grep -q '"processed":0' && break
+            echo "$body" | grep -q '"stopped":"' && break
+          done
